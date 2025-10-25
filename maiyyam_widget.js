@@ -1,14 +1,19 @@
 (function () {
-  // --- SETTINGS (edit these two if needed) ---
+  const TAG = '[Maiyyam]';
+
+  // ---- SETTINGS ----
   const WEBHOOK_URL = 'https://aiagent61999.app.n8n.cloud/webhook/afe2bd8b-6f8c-4e2e-b296-941cc86422b8/chat';
   const LOGO_URL    = 'https://dme2wmiz2suov.cloudfront.net/Institution(3815)/Logo/2642439-Group_21.png';
-
-  // unique prefix to avoid ID/CSS collisions
   const PFX = 'maiy-';
 
-  // inject styles + HTML once DOM is ready
+  // ---- SAFE HELPERS ----
   function onReady(fn){ (document.readyState === 'loading') ? document.addEventListener('DOMContentLoaded', fn) : fn(); }
+  function $(id){ return document.getElementById(id); }
+  function log(){ try{ console.log(TAG, ...arguments); }catch{} }
+  function warn(){ try{ console.warn(TAG, ...arguments); }catch{} }
+  function err(){ try{ console.error(TAG, ...arguments); }catch{} }
 
+  // ---- STYLES ----
   const styleText = `
   :root{
     --maiy-brand:#d9346d; --maiy-text:#e5e7eb; --maiy-muted:#1f2937; --maiy-bg:#0b0f14; --maiy-panel:#ffffff;
@@ -147,317 +152,334 @@
     </div>
   `;
 
+  // ---- BOOT ----
   onReady(() => {
-    // root container
-    const root = document.createElement('div');
-    root.id = ${PFX}root;
-    document.body.appendChild(root);
+    try {
+      log('boot start');
 
-    // style
-    const style = document.createElement('style');
-    style.textContent = styleText;
-    document.head.appendChild(style);
+      // root
+      const root = document.createElement('div');
+      root.id = ${PFX}root;
+      document.body.appendChild(root);
 
-    // html
-    root.innerHTML = html;
+      // style
+      const style = document.createElement('style');
+      style.textContent = styleText;
+      document.head.appendChild(style);
 
-    // helpers
-    const $ = id => document.getElementById(id);
+      // html
+      root.innerHTML = html;
 
-    const panel        = $(${PFX}panel);
-    const launcher     = $(${PFX}launcher);
-    const hint         = $(${PFX}hint);
-    const hintClose    = $(${PFX}hintClose);
-    const bodyEl       = $(${PFX}body);
-    const form         = $(${PFX}form); 
-    const input        = $(${PFX}input);
-    const sendBtn      = $(${PFX}sendBtn);
-    const sendIcon     = $(${PFX}sendIcon);
-    const kebab        = $(${PFX}kebab);
-    const menu         = $(${PFX}menu);
-    const newConvBtn   = $(${PFX}newConv);
-    const openPrevBtn  = $(${PFX}openPrev);
-    const prevModal    = $(${PFX}modal);
-    const convList     = $(${PFX}convList);
-    const clearAllBtn  = $(${PFX}clearAll);
-    const closeModalBtn= $(${PFX}closeModal);
+      // refs
+      const panel        = $(${PFX}panel);
+      const launcher     = $(${PFX}launcher);
+      const hint         = $(${PFX}hint);
+      const hintClose    = $(${PFX}hintClose);
+      const bodyEl       = $(${PFX}body);
+      const form         = $(${PFX}form);
+      const input        = $(${PFX}input);
+      const sendBtn      = $(${PFX}sendBtn);
+      const sendIcon     = $(${PFX}sendIcon);
+      const kebab        = $(${PFX}kebab);
+      const menu         = $(${PFX}menu);
+      const newConvBtn   = $(${PFX}newConv);
+      const openPrevBtn  = $(${PFX}openPrev);
+      const prevModal    = $(${PFX}modal);
+      const convList     = $(${PFX}convList);
+      const clearAllBtn  = $(${PFX}clearAll);
+      const closeModalBtn= $(${PFX}closeModal);
 
-    // storage + state
-    const STORE_KEY = 'maiyyam_conversations_v1';
-    const PERSIST   = true;
-    let conversations = loadConversations();
-    let currentId  = startOrResume();
-    let sessionId  = makeSessionId();
-    let waiting = false, hintTimer = null;
-
-    // confirmation detector & handoff
-    const CONFIRM_RE = /your counselling appointment is confirmed/i;
-    const HANDOFF_DELAY_MS = 1500;
-    let handoffScheduled = false;
-
-    function makeSessionId(){ return (globalThis.crypto?.randomUUID?.() ?? String(Date.now())) + '-' + Math.random().toString(36).slice(2,7); }
-    function loadConversations(){ if(!PERSIST) return {}; try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'{}'); }catch{ return {}; } }
-    function saveConversations(){ if(!PERSIST) return; localStorage.setItem(STORE_KEY, JSON.stringify(conversations)); }
-
-    function startOrResume(){
-      const ids = Object.keys(conversations);
-      if (ids.length) return ids[ids.length-1];
-      const id = String(Date.now());
-      conversations[id] = { id, title:'Conversation', createdAt:Date.now(), messages:[{role:'bot', text:'Welcome to Maiyyam. How can we help you?', t:Date.now()}] };
-      saveConversations(); return id;
-    }
-    function startNew(){
-      const id = String(Date.now());
-      conversations[id] = { id, title:'Conversation', createdAt:Date.now(), messages:[{role:'bot', text:'Welcome to Maiyyam. How can we help you?', t:Date.now()}] };
-      saveConversations(); currentId = id; sessionId = makeSessionId(); renderMessages(true);
-    }
-
-    // UI helpers
-    function push(role,text){ conversations[currentId].messages.push({role,text,t:Date.now()}); saveConversations(); }
-    function renderMessages(fresh=false){
-      bodyEl.innerHTML = '';
-      const msgs = conversations[currentId]?.messages || [];
-      for(const m of msgs){ (m.role==='user') ? addUser(m.text,false) : addBot(m.text,false); }
-      if (!msgs.length && fresh===false){ addBot('Welcome to Maiyyam. How can we help you?', true, false); }
-      bodyEl.scrollTop = bodyEl.scrollHeight;
-    }
-    function addBot(text, store=true, scroll=true){
-      const row = document.createElement('div');
-      row.className = ${PFX}row ${PFX}bot;
-      row.innerHTML = `
-        <div class="${PFX}avatar"><img src="${LOGO_URL}" alt="Maiyyam Assistant"/></div>
-        <div class="${PFX}content">
-          <div class="${PFX}name">Maiyyam Assistant</div>
-          <div class="${PFX}bubble">${text}</div>
-        </div>`;
-      bodyEl.appendChild(row);
-      if (scroll) bodyEl.scrollTop = bodyEl.scrollHeight;
-      if (store) push('bot', text);
-      if (CONFIRM_RE.test(text)) scheduleHandoff();
-    }
-    function addUser(text, store=true){
-      const row = document.createElement('div');
-      row.className = ${PFX}row ${PFX}user;
-      row.innerHTML = <div class="${PFX}content"><div class="${PFX}bubble">${text}</div></div>;
-      bodyEl.appendChild(row);
-      bodyEl.scrollTop = bodyEl.scrollHeight;
-      if (store) push('user', text);
-    }
-    function addTyping(){
-      const row = document.createElement('div');
-      row.className = ${PFX}row ${PFX}bot;
-      row.innerHTML = `
-        <div class="${PFX}avatar"><img src="${LOGO_URL}" alt=""/></div>
-        <div class="${PFX}content">
-          <div class="${PFX}name" style="visibility:hidden;">.</div>
-          <div class="${PFX}bubble"><span class="${PFX}typing"><span class="${PFX}dot"></span><span class="${PFX}dot"></span><span class="${PFX}dot"></span></span></div>
-        </div>`;
-      bodyEl.appendChild(row);
-      bodyEl.scrollTop = bodyEl.scrollHeight;
-      return () => row.remove();
-    }
-    function addSlotPoll(slots){
-      const row = document.createElement('div'); row.className = ${PFX}row ${PFX}bot;
-      const buttons = slots.map(s => {
-        const label = s.readable || s.start_local || s.start_rfc3339 || '';
-        return <button class="${PFX}poll-btn" data-slot="${encodeURIComponent(label)}">${label}</button>;
-      }).join('');
-      row.innerHTML = `
-        <div class="${PFX}avatar"><img src="${LOGO_URL}" alt=""/></div>
-        <div class="${PFX}content" style="max-width:100%;">
-          <div class="${PFX}poll">
-            <div class="${PFX}poll-title">Select any of these</div>
-            ${buttons}
-            <button class="${PFX}poll-btn" data-propose="1">Propose different date and time</button>
-          </div>
-        </div>`;
-      bodyEl.appendChild(row); bodyEl.scrollTop = bodyEl.scrollHeight;
-      row.addEventListener('click', (e)=>{
-        const btn = e.target.closest('button'); if(!btn) return;
-        if (btn.dataset.propose){ sendDirect('Propose different date and time'); row.querySelectorAll('button').forEach(b=>b.disabled=true); return; }
-        const label = decodeURIComponent(btn.dataset.slot || ''); sendDirect(label); row.querySelectorAll('button').forEach(b=>b.disabled=true);
-      });
-    }
-
-    // hint positioning
-    function positionHint(){
-      const r = launcher.getBoundingClientRect();
-      const pad = 16;
-      let cx = r.left + r.width/2;
-      cx = Math.max(pad, Math.min(cx, window.innerWidth - pad));
-      hint.style.setProperty('--maiy-hint-left', cx + 'px');
-    }
-    window.addEventListener('resize', positionHint);
-    window.addEventListener('scroll', positionHint, true);
-    function showHintDelayed(){
-      if (panel.classList.contains(${PFX}open)) return;
-      clearTimeout(hintTimer);
-      hintTimer = setTimeout(()=>{ positionHint(); hint.classList.add(${PFX}show); }, 2000);
-    }
-    function hideHint(){ hint.classList.remove(${PFX}show); clearTimeout(hintTimer); }
-
-    // panel/menu wiring
-    function togglePanel(open){
-      const isOpen = open ?? !panel.classList.contains(${PFX}open);
-      panel.classList.toggle(${PFX}open, isOpen);
-      launcher.setAttribute('aria-expanded', String(isOpen));
-      menu.classList.remove(${PFX}open);
-      if (isOpen){ hideHint(); renderMessages(true); input.focus(); }
-      else { showHintDelayed(); }
-    }
-
-    launcher.addEventListener('click', ()=> togglePanel());
-    document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && panel.classList.contains(${PFX}open)) togglePanel(false); });
-    kebab.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle(${PFX}open); });
-    document.addEventListener('click', ()=> menu.classList.remove(${PFX}open));
-    newConvBtn.addEventListener('click', ()=>{ startNew(); menu.classList.remove(${PFX}open); input.focus(); });
-    openPrevBtn.addEventListener('click', ()=>{ menu.classList.remove(${PFX}open); openPrevModal(); });
-    input.addEventListener('keydown', (e)=>{ if (waiting && (e.key === 'Enter' || e.key.length === 1)) e.preventDefault(); });
-    hintClose.addEventListener('click', ()=>{ hideHint(); });
-
-    // previous conversations modal
-    function openPrevModal(){
-      convList.innerHTML = '';
-      const ids = Object.keys(conversations);
-      if (!ids.length){
-        convList.innerHTML = <div class="${PFX}meta" style="padding:10px;">No conversations yet.</div>;
-      } else {
-        for (const id of ids){
-          const c = conversations[id];
-          const first = c.messages.find(m=>m.text)?.text ?? '';
-          const date = new Date(c.createdAt).toLocaleString();
-          const el = document.createElement('div'); el.className = ${PFX}conv;
-          el.innerHTML = `
-            <div class="${PFX}left">
-              <div class="${PFX}title">${c.title}</div>
-              <div class="${PFX}meta">${date}${first ? ' — ' + first.slice(0,40)+'…' : ''}</div>
-            </div>
-            <div class="${PFX}actions">
-              <button class="${PFX}btn" data-act="load" data-id="${id}">Open</button>
-              <button class="${PFX}btn" data-act="del" data-id="${id}">Delete</button>
-            </div>`;
-          convList.appendChild(el);
-        }
+      if (!panel || !launcher || !form || !input) {
+        throw new Error('essential nodes missing');
       }
-      prevModal.classList.add(${PFX}open);
-    }
-    convList.addEventListener('click', (e)=>{
-      const btn = e.target.closest('button'); if(!btn) return;
-      const id = btn.dataset.id, act = btn.dataset.act;
-      if (act === 'load'){ currentId = id; renderMessages(true); prevModal.classList.remove(${PFX}open); togglePanel(true); }
-      else if (act === 'del'){ delete conversations[id]; saveConversations(); openPrevModal();
-        if (id === currentId){ const ids = Object.keys(conversations); currentId = ids[ids.length-1] || startOrResume(); renderMessages(true); } }
-    });
-    clearAllBtn.addEventListener('click', ()=>{ conversations = {}; saveConversations(); currentId = startOrResume(); renderMessages(true); openPrevModal(); });
-    closeModalBtn.addEventListener('click', ()=> prevModal.classList.remove(${PFX}open));
 
-    // slots + scheduling
-    function extractSlots(data){
-      let slots = data?.suggested_slots ?? data?.slots ?? data?.meta?.suggested_slots;
-      if (typeof slots === 'string'){ try { slots = JSON.parse(slots); } catch {} }
-      return Array.isArray(slots) ? slots : [];
-    }
-    function scheduleHandoff(){
-      if (handoffScheduled) return;
-      handoffScheduled = true;
-      conversations[currentId].title = 'Completed booking';
-      saveConversations();
-      setTimeout(()=>{ startNew(); }, HANDOFF_DELAY_MS);
-    }
+      // state
+      const STORE_KEY = 'maiyyam_conversations_v1';
+      const PERSIST   = true;
+      let conversations = loadConversations();
+      let currentId  = startOrResume();
+      let sessionId  = makeSessionId();
+      let waiting = false, hintTimer = null;
 
-    // util: turn "12/10 at 3pm" into SLOT_PICK:YYYY-MM-DDThh:mm
-    function rewriteNumericDateTimeToSlotPick(input) {
-      const s = String(input || "");
-      const re = /\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b(?:.?\b(?:at|by|around)\b)?\s([0-2]?\d)(?:[.:](\d{2}))?\s*(a\.?m?\.?|p\.?m?\.?|am|pm)?\b/i;
-      const m = s.match(re); if (!m) return input;
-      let [, dd, mm, yyyy, hh, min, ap] = m;
-      const now = new Date();
-      let Y = yyyy ? (yyyy.length === 2 ? 2000 + +yyyy : +yyyy) : now.getFullYear();
-      let H = +hh, M = +mm, D = +dd, MIN = min ? +min : 0;
-      if (ap){ const apu = ap.replace(/\./g,"").toLowerCase(); if (apu==="pm"&&H<12)H+=12; if (apu==="am"&&H===12)H=0; }
-      else { if (H>=1 && H<=8) H+=12; }
-      const pad = n=>String(n).padStart(2,"0");
-      return SLOT_PICK:${Y}-${pad(M)}-${pad(D)}T${pad(H)}:${pad(MIN)}:00+05:30;
-    }
+      // confirmation detector & handoff
+      const CONFIRM_RE = /your counselling appointment is confirmed/i;
+      const HANDOFF_DELAY_MS = 1500;
+      let handoffScheduled = false;
 
-    // network helpers
-    async function postJSON(url, payload, {timeoutMs=20000} = {}){
-      const controller = new AbortController();
-      const t = setTimeout(()=>controller.abort(), timeoutMs);
-      try{
-        const res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) return await res.json();
-        const txt = await res.text();
-        return txt ? { reply: txt } : {};
-      } finally { clearTimeout(t); }
-    }
+      function makeSessionId(){ return (globalThis.crypto?.randomUUID?.() ?? String(Date.now())) + '-' + Math.random().toString(36).slice(2,7); }
+      function loadConversations(){ if(!PERSIST) return {}; try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'{}'); }catch{ return {}; } }
+      function saveConversations(){ if(!PERSIST) return; localStorage.setItem(STORE_KEY, JSON.stringify(conversations)); }
 
-    async function sendDirect(userText){
-      if (!userText) return;
-      addUser(userText);
-      waiting = true; input.disabled = true; sendBtn.disabled = true;
-      sendIcon.style.display = 'none'; const sp = document.createElement('div'); sp.className=${PFX}spinner; sp.id=${PFX}spinner; sendBtn.appendChild(sp);
-      const stopTyping = addTyping();
+      function startOrResume(){
+        const ids = Object.keys(conversations);
+        if (ids.length) return ids[ids.length-1];
+        const id = String(Date.now());
+        conversations[id] = { id, title:'Conversation', createdAt:Date.now(), messages:[{role:'bot', text:'Welcome to Maiyyam. How can we help you?', t:Date.now()}] };
+        saveConversations(); return id;
+      }
+      function startNew(){
+        const id = String(Date.now());
+        conversations[id] = { id, title:'Conversation', createdAt:Date.now(), messages:[{role:'bot', text:'Welcome to Maiyyam. How can we help you?', t:Date.now()}] };
+        saveConversations(); currentId = id; sessionId = makeSessionId(); renderMessages(true);
+      }
 
-      const outgoing = rewriteNumericDateTimeToSlotPick(userText);
-      const payload = { sessionId, key: web:${sessionId}, message: outgoing };
+      // UI helpers
+      function push(role,text){ conversations[currentId].messages.push({role,text,t:Date.now()}); saveConversations(); }
+      function renderMessages(fresh=false){
+        bodyEl.innerHTML = '';
+        const msgs = conversations[currentId]?.messages || [];
+        for(const m of msgs){ (m.role==='user') ? addUser(m.text,false) : addBot(m.text,false); }
+        if (!msgs.length && fresh===false){ addBot('Welcome to Maiyyam. How can we help you?', true, false); }
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+      }
+      function addBot(text, store=true, scroll=true){
+        const row = document.createElement('div');
+        row.className = ${PFX}row ${PFX}bot;
+        row.innerHTML = `
+          <div class="${PFX}avatar"><img src="${LOGO_URL}" alt="Maiyyam Assistant"/></div>
+          <div class="${PFX}content">
+            <div class="${PFX}name">Maiyyam Assistant</div>
+            <div class="${PFX}bubble">${text}</div>
+          </div>`;
+        bodyEl.appendChild(row);
+        if (scroll) bodyEl.scrollTop = bodyEl.scrollHeight;
+        if (store) push('bot', text);
+        if (CONFIRM_RE.test(text)) scheduleHandoff();
+      }
+      function addUser(text, store=true){
+        const row = document.createElement('div');
+        row.className = ${PFX}row ${PFX}user;
+        row.innerHTML = <div class="${PFX}content"><div class="${PFX}bubble">${text}</div></div>;
+        bodyEl.appendChild(row);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+        if (store) push('user', text);
+      }
+      function addTyping(){
+        const row = document.createElement('div');
+        row.className = ${PFX}row ${PFX}bot;
+        row.innerHTML = `
+          <div class="${PFX}avatar"><img src="${LOGO_URL}" alt=""/></div>
+          <div class="${PFX}content">
+            <div class="${PFX}name" style="visibility:hidden;">.</div>
+            <div class="${PFX}bubble"><span class="${PFX}typing"><span class="${PFX}dot"></span><span class="${PFX}dot"></span><span class="${PFX}dot"></span></span></div>
+          </div>`;
+        bodyEl.appendChild(row);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+        return () => row.remove();
+      }
+      function addSlotPoll(slots){
+        const row = document.createElement('div'); row.className = ${PFX}row ${PFX}bot;
+        const buttons = slots.map(s => {
+          const label = s.readable || s.start_local || s.start_rfc3339 || '';
+          return <button class="${PFX}poll-btn" data-slot="${encodeURIComponent(label)}">${label}</button>;
+        }).join('');
+        row.innerHTML = `
+          <div class="${PFX}avatar"><img src="${LOGO_URL}" alt=""/></div>
+          <div class="${PFX}content" style="max-width:100%;">
+            <div class="${PFX}poll">
+              <div class="${PFX}poll-title">Select any of these</div>
+              ${buttons}
+              <button class="${PFX}poll-btn" data-propose="1">Propose different date and time</button>
+            </div>
+          </div>`;
+        bodyEl.appendChild(row); bodyEl.scrollTop = bodyEl.scrollHeight;
+        row.addEventListener('click', (e)=>{
+          const btn = e.target.closest('button'); if(!btn) return;
+          if (btn.dataset.propose){ sendDirect('Propose different date and time'); row.querySelectorAll('button').forEach(b=>b.disabled=true); return; }
+          const label = decodeURIComponent(btn.dataset.slot || ''); sendDirect(label); row.querySelectorAll('button').forEach(b=>b.disabled=true);
+        });
+      }
 
-      let data = null;
-      try{
-        data = await postJSON(WEBHOOK_URL, payload);
-      }catch{
+      // hint positioning
+      function positionHint(){
+        const r = launcher.getBoundingClientRect();
+        const pad = 16;
+        let cx = r.left + r.width/2;
+        cx = Math.max(pad, Math.min(cx, window.innerWidth - pad));
+        hint.style.setProperty('--maiy-hint-left', cx + 'px');
+      }
+      window.addEventListener('resize', positionHint);
+      window.addEventListener('scroll', positionHint, true);
+      function showHintDelayed(){
+        if (panel.classList.contains(${PFX}open)) return;
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(()=>{ positionHint(); hint.classList.add(${PFX}show); }, 2000);
+      }
+      function hideHint(){ hint.classList.remove(${PFX}show); clearTimeout(hintTimer); }
+
+      // panel/menu wiring
+      function togglePanel(open){
+        const isOpen = open ?? !panel.classList.contains(${PFX}open);
+        panel.classList.toggle(${PFX}open, isOpen);
+        launcher.setAttribute('aria-expanded', String(isOpen));
+        menu.classList.remove(${PFX}open);
+        if (isOpen){ hideHint(); renderMessages(true); input.focus(); }
+        else { showHintDelayed(); }
+      }
+
+      launcher.addEventListener('click', ()=> togglePanel());
+      document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && panel.classList.contains(${PFX}open)) togglePanel(false); });
+      kebab.addEventListener('click', (e)=>{ e.stopPropagation(); menu.classList.toggle(${PFX}open); });
+      document.addEventListener('click', ()=> menu.classList.remove(${PFX}open));
+      newConvBtn.addEventListener('click', ()=>{ startNew(); menu.classList.remove(${PFX}open); input.focus(); });
+      openPrevBtn.addEventListener('click', ()=>{ menu.classList.remove(${PFX}open); openPrevModal(); });
+      input.addEventListener('keydown', (e)=>{ if (waiting && (e.key === 'Enter' || e.key.length === 1)) e.preventDefault(); });
+      hintClose.addEventListener('click', ()=>{ hideHint(); });
+
+      // previous conv modal
+      function openPrevModal(){
+        convList.innerHTML = '';
+        const ids = Object.keys(conversations);
+        if (!ids.length){
+          convList.innerHTML = <div class="${PFX}meta" style="padding:10px;">No conversations yet.</div>;
+        } else {
+          for (const id of ids){
+            const c = conversations[id];
+            const first = c.messages.find(m=>m.text)?.text ?? '';
+            const date = new Date(c.createdAt).toLocaleString();
+            const el = document.createElement('div'); el.className = ${PFX}conv;
+            el.innerHTML = `
+              <div class="${PFX}left">
+                <div class="${PFX}title">${c.title}</div>
+                <div class="${PFX}meta">${date}${first ? ' — ' + first.slice(0,40)+'…' : ''}</div>
+              </div>
+              <div class="${PFX}actions">
+                <button class="${PFX}btn" data-act="load" data-id="${id}">Open</button>
+                <button class="${PFX}btn" data-act="del" data-id="${id}">Delete</button>
+              </div>`;
+            convList.appendChild(el);
+          }
+        }
+        prevModal.classList.add(${PFX}open);
+      }
+      convList.addEventListener('click', (e)=>{
+        const btn = e.target.closest('button'); if(!btn) return;
+        const id = btn.dataset.id, act = btn.dataset.act;
+        if (act === 'load'){ currentId = id; renderMessages(true); prevModal.classList.remove(${PFX}open); togglePanel(true); }
+        else if (act === 'del'){ delete conversations[id]; saveConversations(); openPrevModal();
+          if (id === currentId){ const ids = Object.keys(conversations); currentId = ids[ids.length-1] || startOrResume(); renderMessages(true); } }
+      });
+      clearAllBtn.addEventListener('click', ()=>{ conversations = {}; saveConversations(); currentId = startOrResume(); renderMessages(true); openPrevModal(); });
+      closeModalBtn.addEventListener('click', ()=> prevModal.classList.remove(${PFX}open));
+
+      // slots + scheduling
+      function extractSlots(data){
+        let slots = data?.suggested_slots ?? data?.slots ?? data?.meta?.suggested_slots;
+        if (typeof slots === 'string'){ try { slots = JSON.parse(slots); } catch {} }
+        return Array.isArray(slots) ? slots : [];
+      }
+      function scheduleHandoff(){
+        if (handoffScheduled) return;
+        handoffScheduled = true;
+        conversations[currentId].title = 'Completed booking';
+        saveConversations();
+        setTimeout(()=>{ startNew(); }, HANDOFF_DELAY_MS);
+      }
+
+      // "12/10 at 3pm" -> SLOT_PICK:YYYY-MM-DDThh:mm
+      function rewriteNumericDateTimeToSlotPick(input) {
+        const s = String(input || "");
+        const re = /\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b(?:.?\b(?:at|by|around)\b)?\s([0-2]?\d)(?:[.:](\d{2}))?\s*(a\.?m?\.?|p\.?m?\.?|am|pm)?\b/i;
+        const m = s.match(re); if (!m) return input;
+        let [, dd, mm, yyyy, hh, min, ap] = m;
+        const now = new Date();
+        let Y = yyyy ? (yyyy.length === 2 ? 2000 + +yyyy : +yyyy) : now.getFullYear();
+        let H = +hh, M = +mm, D = +dd, MIN = min ? +min : 0;
+        if (ap){ const apu = ap.replace(/\./g,"").toLowerCase(); if (apu==="pm"&&H<12)H+=12; if (apu==="am"&&H===12)H=0; }
+        else { if (H>=1 && H<=8) H+=12; }
+        const pad = n=>String(n).padStart(2,"0");
+        return SLOT_PICK:${Y}-${pad(M)}-${pad(D)}T${pad(H)}:${pad(MIN)}:00+05:30;
+      }
+
+      // network
+      async function postJSON(url, payload, {timeoutMs=20000} = {}){
+        const controller = new AbortController();
+        const t = setTimeout(()=>controller.abort(), timeoutMs);
         try{
-          data = await postJSON(WEBHOOK_URL, { sessionId, key: web:${sessionId}, message: userText }, {timeoutMs:20000});
+          const res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
+          const ct = res.headers.get('content-type') || '';
+          if (ct.includes('application/json')) return await res.json();
+          const txt = await res.text();
+          return txt ? { reply: txt } : {};
+        } finally { clearTimeout(t); }
+      }
+
+      async function sendDirect(userText){
+        if (!userText) return;
+        addUser(userText);
+        waiting = true; input.disabled = true; sendBtn.disabled = true;
+        sendIcon.style.display = 'none';
+        const sp = document.createElement('div'); sp.className=${PFX}spinner; sp.id=${PFX}spinner; sendBtn.appendChild(sp);
+        const stopTyping = addTyping();
+
+        const outgoing = rewriteNumericDateTimeToSlotPick(userText);
+        const payload = { sessionId, key: web:${sessionId}, message: outgoing };
+
+        let data = null;
+        try{
+          data = await postJSON(WEBHOOK_URL, payload);
         }catch{
-          stopTyping();
-          addBot('Sorry—connection hiccup. Please send that once more.');
-          waiting = false; input.disabled = false; sendBtn.disabled = false;
-          document.getElementById(${PFX}spinner)?.remove(); sendIcon.style.display = '';
+          try{
+            data = await postJSON(WEBHOOK_URL, { sessionId, key: web:${sessionId}, message: userText }, {timeoutMs:20000});
+          }catch(e){
+            stopTyping();
+            addBot('Sorry—connection hiccup. Please send that once more.');
+            waiting = false; input.disabled = false; sendBtn.disabled = false;
+            document.getElementById(${PFX}spinner)?.remove(); sendIcon.style.display = '';
+            return;
+          }
+        }
+
+        stopTyping();
+
+        if (data?.end_conversation === true){
+          if (data.reply) addBot(data.reply);
+          scheduleHandoff();
+          finishWait();
           return;
         }
-      }
 
-      stopTyping();
+        const slots = extractSlots(data);
+        if (slots.length){ addSlotPoll(slots); finishWait(); return; }
 
-      if (data?.end_conversation === true){
-        if (data.reply) addBot(data.reply);
-        scheduleHandoff();
+        let replyText = '';
+        if (typeof data === 'string') replyText = data;
+        else if (typeof data?.reply === 'string' && data.reply.trim()) replyText = data.reply;
+        else if (typeof data?.message === 'string' && data.message.trim()) replyText = data.message;
+        else replyText = 'I couldn’t parse a reply, but I’m here if you try again.';
+        addBot(replyText);
+        if (CONFIRM_RE.test(replyText)) scheduleHandoff();
+
         finishWait();
-        return;
       }
 
-      const slots = extractSlots(data);
-      if (slots.length){ addSlotPoll(slots); finishWait(); return; }
+      function finishWait(){
+        waiting = false; input.disabled = false; sendBtn.disabled = false;
+        document.getElementById(${PFX}spinner)?.remove(); sendIcon.style.display = '';
+        input.focus();
+      }
 
-      let replyText = '';
-      if (typeof data === 'string') replyText = data;
-      else if (typeof data?.reply === 'string' && data.reply.trim()) replyText = data.reply;
-      else if (typeof data?.message === 'string' && data.message.trim()) replyText = data.message;
-      else replyText = 'I couldn’t parse a reply, but I’m here if you try again.';
-      addBot(replyText);
-      if (CONFIRM_RE.test(replyText)) scheduleHandoff();
+      // form submit
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        if (waiting) return;
+        const text = input.value.trim(); if(!text) return;
+        input.value = '';
+        await sendDirect(text);
+      });
 
-      finishWait();
+      // initial
+      launcher.setAttribute('aria-expanded','false');
+      showHintDelayed();
+
+      log('boot done');
+      // ---- end try
+    } catch (e) {
+      err('boot error', e && (e.stack || e.message || e));
     }
 
-    function finishWait(){
-      waiting = false; input.disabled = false; sendBtn.disabled = false;
-      document.getElementById(${PFX}spinner)?.remove(); sendIcon.style.display = '';
-      input.focus();
-    }
-
-    // form submit
-    form.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      if (waiting) return;
-      const text = input.value.trim(); if(!text) return;
-      input.value = '';
-      await sendDirect(text);
-    });
-
-    // initial state
-    launcher.setAttribute('aria-expanded','false');
-    showHintDelayed();
+    // local helpers inside boot scope
+    function showHintDelayed(){}
+    // (shadowed by the real one above after boot success)
   });
 })();
