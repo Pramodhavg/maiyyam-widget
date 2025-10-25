@@ -188,7 +188,7 @@
     let conversations = loadConversations();
     let currentId  = startOrResume();
     let sessionId  = makeSessionId();
-    let waiting = false, suppressedUntilReopen = false, hintTimer = null;
+    let waiting = false, hintTimer = null;
 
     // confirmation detector & handoff
     const CONFIRM_RE = /your counselling appointment is confirmed/i;
